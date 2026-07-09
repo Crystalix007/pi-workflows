@@ -34,7 +34,8 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`Workflow done.`, "info");
 				if (result !== undefined) {
 					// Print the result so the user can see it.
-					const text = typeof result === "string" ? result : JSON.stringify(result);
+					const text =
+						typeof result === "string" ? result : JSON.stringify(result);
 					pi.sendMessage({
 						customType: "pi-workflows",
 						content: text.slice(0, 2000),
@@ -98,7 +99,12 @@ export default function (pi: ExtensionAPI) {
 								value: String(params.inline ?? ""),
 							} as const);
 			try {
-				const result = await runWorkflow(pi, source.value, source.kind, params.args);
+				const result = await runWorkflow(
+					pi,
+					source.value,
+					source.kind,
+					params.args,
+				);
 				const text =
 					typeof result === "string" ? result : JSON.stringify(result);
 				return {

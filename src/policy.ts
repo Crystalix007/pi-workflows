@@ -67,7 +67,10 @@ export function withPolicy(
 					ctx.logger.step({
 						primitive: name,
 						args,
-						error: lastError instanceof Error ? lastError.message : String(lastError),
+						error:
+							lastError instanceof Error
+								? lastError.message
+								: String(lastError),
 						durationMs: Date.now() - t0,
 						// retry will log again on next attempt; the final one is the definitive record
 					});
@@ -75,7 +78,8 @@ export function withPolicy(
 			}
 		}
 		// all retries exhausted
-		const msg = lastError instanceof Error ? lastError.message : String(lastError);
+		const msg =
+			lastError instanceof Error ? lastError.message : String(lastError);
 		ctx.logger.step({
 			primitive: name,
 			args,

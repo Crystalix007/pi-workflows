@@ -51,7 +51,10 @@ export interface AdapterOptions {
 	policy?: PolicyConfig;
 }
 
-export function createPrimitives(drivers: AdapterDrivers, adapterOpts: AdapterOptions = {}) {
+export function createPrimitives(
+	drivers: AdapterDrivers,
+	adapterOpts: AdapterOptions = {},
+) {
 	const opts: WorkflowOptions = {};
 	const logger = adapterOpts.logger ?? new NoopLogger();
 	const policy = adapterOpts.policy ?? DEFAULT_POLICY;
