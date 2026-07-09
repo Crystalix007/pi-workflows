@@ -23,27 +23,40 @@ const DB_PATH = join(homedir(), ".pi", "agent", "todo.db");
 // ---- known-schema SQL helpers (mirror pi-todo's schema) ----
 
 function requireDb(): any {
-	if (!DatabaseSync) throw new Error("node:sqlite is not available (Node ≥22.5 required).");
+	if (!DatabaseSync)
+		throw new Error("node:sqlite is not available (Node ≥22.5 required).");
 	const db = new DatabaseSync(DB_PATH);
 	db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON");
 	return db;
 }
 
-function ensureList(db: any, scope: string | undefined, name: string, title?: string): number {
+function ensureList(
+	db: any,
+	scope: string | undefined,
+	name: string,
+	title?: string,
+): number {
 	const s = scope != null && scope.length > 0 ? scope : "";
-	const existing = db.prepare("SELECT id FROM lists WHERE scope=? AND name=?").get(s, name);
+	const existing = db
+		.prepare("SELECT id FROM lists WHERE scope=? AND name=?")
+		.get(s, name);
 	if (existing) return (existing as any).id;
 	const ts = Date.now();
-	const row = db.prepare(
-		"INSERT INTO lists (scope, name, title, created_at, updated_at) VALUES (?,?,?,?,?)",
-	).run(s, name, title ?? null, ts, ts);
+	const row = db
+		.prepare(
+			"INSERT INTO lists (scope, name, title, created_at, updated_at) VALUES (?,?,?,?,?)",
+		)
+		.run(s, name, title ?? null, ts, ts);
 	return Number(row.lastInsertRowid);
 }
 
 function getListId(db: any, scope: string, name: string): number {
 	const s = scope != null && scope.length > 0 ? scope : "";
-	const row = db.prepare("SELECT id FROM lists WHERE scope=? AND name=?").get(s, name);
-	if (!row) throw new Error(`Todo list '${s ? `${s}/` : ""}${name}' not found.`);
+	const row = db
+		.prepare("SELECT id FROM lists WHERE scope=? AND name=?")
+		.get(s, name);
+	if (!row)
+		throw new Error(`Todo list '${s ? `${s}/` : ""}${name}' not found.`);
 	return (row as any).id;
 }
 
@@ -54,32 +67,64 @@ export interface TodoResult {
 	action: string;
 }
 
-export async function callTodo(action: string, params: Record<string, unknown> = {}): Promise<TodoResult> {
-	if (!DatabaseSync) throw new Error("pi-todo is not installed or node:sqlite is unavailable. Install pi-todo to use the todo() primitive.");
+export async function callTodo(
+	action: string,
+	params: Record<string, unknown> = {},
+): Promise<TodoResult> {
+	if (!DatabaseSync)
+		throw new Error(
+			"pi-todo is not installed or node:sqlite is unavailable. Install pi-todo to use the todo() primitive.",
+		);
 	const db = requireDb();
 	try {
 		switch (action) {
-			case "lists": return listLists(db);
-			case "create": return createList(db, params);
-			case "add": return addTasks(db, params);
-			case "next": return nextTask(db, params);
-			case "update": return updateTask(db, params);
-			case "show": return showList(db, params);
-			case "purge": return purgeDone(db, params);
-			case "move": return moveTask(db, params);
-			case "delete": return deleteTask(db, params);
-			default: throw new Error(`Unknown todo action '${action}'. Supported: lists, create, add, next, update, show, purge, move, delete.`);
+			case "lists":
+				return listLists(db);
+			case "create":
+				return createList(db, params);
+			case "add":
+				return addTasks(db, params);
+			case "next":
+				return nextTask(db, params);
+			case "update":
+				return updateTask(db, params);
+			case "show":
+				return showList(db, params);
+			case "purge":
+				return purgeDone(db, params);
+			case "move":
+				return moveTask(db, params);
+			case "delete":
+				return deleteTask(db, params);
+			default:
+				throw new Error(
+					`Unknown todo action '${action}'. Supported: lists, create, add, next, update, show, purge, move, delete.`,
+				);
 		}
 	} finally {
-		try { db.close(); } catch { /* noop */ }
+		try {
+			db.close();
+		} catch {
+			/* noop */
+		}
 	}
 }
 
 function listLists(db: any): TodoResult {
-	const lists = db.prepare("SELECT scope, name, title, created_at FROM lists ORDER BY updated_at DESC").all();
+	const lists = db
+		.prepare(
+			"SELECT scope, name, title, created_at FROM lists ORDER BY updated_at DESC",
+		)
+		.all();
 	return {
 		action: "lists",
-		details: { action: "lists", lists: (lists as any[]).map(l => ({ ...l, path: l.scope ? `${l.scope}/${l.name}` : l.name })) },
+		details: {
+			action: "lists",
+			lists: (lists as any[]).map((l) => ({
+				...l,
+				path: l.scope ? `${l.scope}/${l.name}` : l.name,
+			})),
+		},
 	};
 }
 
@@ -91,7 +136,13 @@ function createList(db: any, p: Record<string, unknown>): TodoResult {
 	const counts = countsOf(tasks);
 	return {
 		action: "create",
-		details: { action: "create", list: { scope: scope ?? "", name, path, title: p.title ?? null }, tree: tasks, counts, affected: { created_list: true } },
+		details: {
+			action: "create",
+			list: { scope: scope ?? "", name, path, title: p.title ?? null },
+			tree: tasks,
+			counts,
+			affected: { created_list: true },
+		},
 	};
 }
 
@@ -100,7 +151,8 @@ function addTasks(db: any, p: Record<string, unknown>): TodoResult {
 	const { scope, name, path } = parseListPath(rawList);
 	const listId = ensureList(db, scope, name, undefined);
 	const items = p.items as any[] | undefined;
-	if (!items || items.length === 0) throw new Error("'items' is required for todo add.");
+	if (!items || items.length === 0)
+		throw new Error("'items' is required for todo add.");
 	const underRoot = (p.under as number) ?? null;
 
 	// Resolve ref → id ordering (mirror pi-todo's resolveItemOrder)
@@ -115,21 +167,23 @@ function addTasks(db: any, p: Record<string, unknown>): TodoResult {
 			parentId = underRoot;
 		}
 		const ts = Date.now();
-		const row = db.prepare(
-			"INSERT INTO tasks (list_id, text, status, priority, note, tags, description, parent_id, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-		).run(
-			listId,
-			it.text,
-			it.status ?? "pending",
-			it.priority ?? "medium",
-			it.note ?? null,
-			it.tags ? it.tags.join(",") : null,
-			it.description ?? null,
-			parentId,
-			0, // position
-			ts,
-			ts,
-		);
+		const row = db
+			.prepare(
+				"INSERT INTO tasks (list_id, text, status, priority, note, tags, description, parent_id, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+			)
+			.run(
+				listId,
+				it.text,
+				it.status ?? "pending",
+				it.priority ?? "medium",
+				it.note ?? null,
+				it.tags ? it.tags.join(",") : null,
+				it.description ?? null,
+				parentId,
+				0, // position
+				ts,
+				ts,
+			);
 		const newId = Number(row.lastInsertRowid);
 		if (it.ref) byRef.set(it.ref, newId);
 		added++;
@@ -138,7 +192,13 @@ function addTasks(db: any, p: Record<string, unknown>): TodoResult {
 	const counts = countsOf(tasks);
 	return {
 		action: "add",
-		details: { action: "add", list: { scope: scope ?? "", name, path, title: null }, tree: tasks, counts, affected: { added } },
+		details: {
+			action: "add",
+			list: { scope: scope ?? "", name, path, title: null },
+			tree: tasks,
+			counts,
+			affected: { added },
+		},
 	};
 }
 
@@ -155,27 +215,32 @@ function nextTask(db: any, p: Record<string, unknown>): TodoResult {
 		scope = parsed.scope ?? "";
 		name = parsed.name;
 		listId = getListId(db, scope, name);
-		task = db.prepare(
-			`SELECT id, text, status, priority, note, tags FROM tasks
+		task = db
+			.prepare(
+				`SELECT id, text, status, priority, note, tags FROM tasks
        WHERE list_id=? AND status=? AND parent_id IS NULL
        ORDER BY CASE priority WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 END DESC, id ASC
        LIMIT 1`,
-		).get(listId, wantedStatus);
+			)
+			.get(listId, wantedStatus);
 	} else {
 		// global search across all lists
-		task = db.prepare(
-			`SELECT t.id, t.text, t.status, t.priority, t.note, t.tags, l.scope, l.name, l.id as list_id
+		task = db
+			.prepare(
+				`SELECT t.id, t.text, t.status, t.priority, t.note, t.tags, l.scope, l.name, l.id as list_id
        FROM tasks t JOIN lists l ON t.list_id = l.id
        WHERE t.status=? AND t.parent_id IS NULL
        ORDER BY CASE t.priority WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 END DESC, t.id ASC
        LIMIT 1`,
-		).get(wantedStatus);
+			)
+			.get(wantedStatus);
 		if (!task) throw new Error(`No '${wantedStatus}' tasks found.`);
 		scope = (task as any).scope ?? "";
 		name = (task as any).name;
 		listId = (task as any).list_id;
 	}
-	if (!task) throw new Error(`No '${wantedStatus}' tasks found in '${rawList}'.`);
+	if (!task)
+		throw new Error(`No '${wantedStatus}' tasks found in '${rawList}'.`);
 
 	const t = task as any;
 	const path = scope ? `${scope}/${name}` : name;
@@ -209,16 +274,40 @@ function updateTask(db: any, p: Record<string, unknown>): TodoResult {
 
 	const sets: string[] = [];
 	const values: any[] = [];
-	if (p.text !== undefined) { sets.push("text=?"); values.push(p.text); }
-	if (p.status !== undefined) { sets.push("status=?"); values.push(p.status); }
-	if (p.priority !== undefined) { sets.push("priority=?"); values.push(p.priority); }
-	if (p.note !== undefined) { sets.push("note=?"); values.push(p.note); }
-	if (p.tags !== undefined) { sets.push("tags=?"); values.push(Array.isArray(p.tags) ? (p.tags as string[]).join(",") : ""); }
-	if (p.description !== undefined) { sets.push("description=?"); values.push(p.description); }
-	if (sets.length === 0) throw new Error("todo update needs at least one of: text, status, priority, note, tags, description.");
-	sets.push("updated_at=?"); values.push(Date.now());
+	if (p.text !== undefined) {
+		sets.push("text=?");
+		values.push(p.text);
+	}
+	if (p.status !== undefined) {
+		sets.push("status=?");
+		values.push(p.status);
+	}
+	if (p.priority !== undefined) {
+		sets.push("priority=?");
+		values.push(p.priority);
+	}
+	if (p.note !== undefined) {
+		sets.push("note=?");
+		values.push(p.note);
+	}
+	if (p.tags !== undefined) {
+		sets.push("tags=?");
+		values.push(Array.isArray(p.tags) ? (p.tags as string[]).join(",") : "");
+	}
+	if (p.description !== undefined) {
+		sets.push("description=?");
+		values.push(p.description);
+	}
+	if (sets.length === 0)
+		throw new Error(
+			"todo update needs at least one of: text, status, priority, note, tags, description.",
+		);
+	sets.push("updated_at=?");
+	values.push(Date.now());
 	values.push(id, listId);
-	db.prepare(`UPDATE tasks SET ${sets.join(", ")} WHERE id=? AND list_id=?`).run(...values);
+	db.prepare(
+		`UPDATE tasks SET ${sets.join(", ")} WHERE id=? AND list_id=?`,
+	).run(...values);
 
 	// Cascade status to descendants if requested
 	if (p.status !== undefined && p.cascade) {
@@ -229,14 +318,31 @@ function updateTask(db: any, p: Record<string, unknown>): TodoResult {
 	const counts = countsOf(tasks);
 	return {
 		action: "update",
-		details: { action: "update", list: { scope, name, path, title: null }, tree: tasks, counts, affected: { updated: 1 } },
+		details: {
+			action: "update",
+			list: { scope, name, path, title: null },
+			tree: tasks,
+			counts,
+			affected: { updated: 1 },
+		},
 	};
 }
 
-function cascadeStatus(db: any, parentId: number, listId: number, status: string): void {
-	const children = db.prepare("SELECT id FROM tasks WHERE list_id=? AND parent_id=?").all(listId, parentId) as any[];
+function cascadeStatus(
+	db: any,
+	parentId: number,
+	listId: number,
+	status: string,
+): void {
+	const children = db
+		.prepare("SELECT id FROM tasks WHERE list_id=? AND parent_id=?")
+		.all(listId, parentId) as any[];
 	for (const c of children) {
-		db.prepare("UPDATE tasks SET status=?, updated_at=? WHERE id=?").run(status, Date.now(), c.id);
+		db.prepare("UPDATE tasks SET status=?, updated_at=? WHERE id=?").run(
+			status,
+			Date.now(),
+			c.id,
+		);
 		cascadeStatus(db, c.id, listId, status);
 	}
 }
@@ -249,7 +355,12 @@ function showList(db: any, p: Record<string, unknown>): TodoResult {
 	const counts = countsOf(tasks);
 	return {
 		action: "show",
-		details: { action: "show", list: { scope: scope ?? "", name, path, title: null }, tree: tasks, counts },
+		details: {
+			action: "show",
+			list: { scope: scope ?? "", name, path, title: null },
+			tree: tasks,
+			counts,
+		},
 	};
 }
 
@@ -259,16 +370,24 @@ function purgeDone(db: any, p: Record<string, unknown>): TodoResult {
 	const listId = getListId(db, scope, name);
 
 	// Recursively delete tasks whose entire subtree is "done"
-	const removed = db.prepare(
-		`DELETE FROM tasks WHERE list_id=? AND status='done'
+	const removed = db
+		.prepare(
+			`DELETE FROM tasks WHERE list_id=? AND status='done'
      AND id NOT IN (SELECT DISTINCT parent_id FROM tasks WHERE list_id=? AND parent_id IS NOT NULL AND status!='done')`,
-	).run(listId, listId).changes;
+		)
+		.run(listId, listId).changes;
 
 	const tasks = fetchTree(db, listId);
 	const counts = countsOf(tasks);
 	return {
 		action: "purge",
-		details: { action: "purge", list: { scope: scope ?? "", name, path, title: null }, tree: tasks, counts, affected: { deleted: removed } },
+		details: {
+			action: "purge",
+			list: { scope: scope ?? "", name, path, title: null },
+			tree: tasks,
+			counts,
+			affected: { deleted: removed },
+		},
 	};
 }
 
@@ -280,12 +399,20 @@ function moveTask(db: any, p: Record<string, unknown>): TodoResult {
 	if (id == null) throw new Error("'id' is required for todo move.");
 	const under = (p.under as number | undefined) ?? null;
 	// Simple re-parent (no after ordering for v1)
-	db.prepare("UPDATE tasks SET parent_id=?, updated_at=? WHERE id=? AND list_id=?").run(under, Date.now(), id, listId);
+	db.prepare(
+		"UPDATE tasks SET parent_id=?, updated_at=? WHERE id=? AND list_id=?",
+	).run(under, Date.now(), id, listId);
 	const tasks = fetchTree(db, listId);
 	const counts = countsOf(tasks);
 	return {
 		action: "move",
-		details: { action: "move", list: { scope: scope ?? "", name, path, title: null }, tree: tasks, counts, affected: { moved: true } },
+		details: {
+			action: "move",
+			list: { scope: scope ?? "", name, path, title: null },
+			tree: tasks,
+			counts,
+			affected: { moved: true },
+		},
 	};
 }
 
@@ -309,17 +436,29 @@ function deleteTask(db: any, p: Record<string, unknown>): TodoResult {
 	const counts = countsOf(tasks);
 	return {
 		action: "delete",
-		details: { action: "delete", list: { scope: scope ?? "", name, path, title: null }, tree: tasks, counts, affected: { deleted: 1 } },
+		details: {
+			action: "delete",
+			list: { scope: scope ?? "", name, path, title: null },
+			tree: tasks,
+			counts,
+			affected: { deleted: 1 },
+		},
 	};
 }
 
 // ---- helpers ----
 
-function parseListPath(raw: string): { scope: string; name: string; path: string; rootTaskId?: number } {
+function parseListPath(raw: string): {
+	scope: string;
+	name: string;
+	path: string;
+	rootTaskId?: number;
+} {
 	const trimmed = raw.trim();
 	// strip subtree ref: scope/name#123
 	const hashIdx = trimmed.indexOf("#");
-	const rootTaskId = hashIdx >= 0 ? Number(trimmed.slice(hashIdx + 1)) : undefined;
+	const rootTaskId =
+		hashIdx >= 0 ? Number(trimmed.slice(hashIdx + 1)) : undefined;
 	const listPart = hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed;
 	const slash = listPart.indexOf("/");
 	let scope: string;
@@ -331,7 +470,13 @@ function parseListPath(raw: string): { scope: string; name: string; path: string
 		scope = "";
 		name = listPart.startsWith("/") ? listPart.slice(1) : listPart;
 	}
-	return { scope, name, path: scope ? `${scope}/${name}` : name, rootTaskId: rootTaskId && !Number.isNaN(rootTaskId) ? rootTaskId : undefined };
+	return {
+		scope,
+		name,
+		path: scope ? `${scope}/${name}` : name,
+		rootTaskId:
+			rootTaskId && !Number.isNaN(rootTaskId) ? rootTaskId : undefined,
+	};
 }
 
 function resolveOrder(items: any[]): any[] {
@@ -348,7 +493,9 @@ function resolveOrder(items: any[]): any[] {
 	// Check all underRef references exist
 	for (const it of items) {
 		if (it.underRef && !refs.has(it.underRef)) {
-			throw new Error(`underRef '${it.underRef}' does not reference any item's ref.`);
+			throw new Error(
+				`underRef '${it.underRef}' does not reference any item's ref.`,
+			);
 		}
 	}
 	// DFS topological sort
@@ -382,9 +529,11 @@ interface TreeNode {
 }
 
 function fetchTree(db: any, listId: number): TreeNode[] {
-	const rows = db.prepare(
-		"SELECT id, text, status, priority, note, tags, description, parent_id FROM tasks WHERE list_id=? ORDER BY id",
-	).all(listId) as any[];
+	const rows = db
+		.prepare(
+			"SELECT id, text, status, priority, note, tags, description, parent_id FROM tasks WHERE list_id=? ORDER BY id",
+		)
+		.all(listId) as any[];
 	const byParent = new Map<number | null, TreeNode[]>();
 	for (const r of rows) {
 		const node: TreeNode = {
@@ -399,7 +548,10 @@ function fetchTree(db: any, listId: number): TreeNode[] {
 		};
 		const key = r.parent_id ?? (null as unknown as number);
 		let arr = byParent.get(key);
-		if (!arr) { arr = []; byParent.set(key, arr); }
+		if (!arr) {
+			arr = [];
+			byParent.set(key, arr);
+		}
 		arr.push(node);
 	}
 	function build(parentId: number | null): TreeNode[] {
@@ -411,9 +563,18 @@ function fetchTree(db: any, listId: number): TreeNode[] {
 }
 
 function countsOf(nodes: TreeNode[]): Record<string, number> {
-	let total = 0, pending = 0, inProgress = 0, done = 0;
+	let total = 0,
+		pending = 0,
+		inProgress = 0,
+		done = 0;
 	function walk(list: TreeNode[]) {
-		for (const n of list) { total++; if (n.status === "pending") pending++; else if (n.status === "in_progress") inProgress++; else if (n.status === "done") done++; walk(n.children); }
+		for (const n of list) {
+			total++;
+			if (n.status === "pending") pending++;
+			else if (n.status === "in_progress") inProgress++;
+			else if (n.status === "done") done++;
+			walk(n.children);
+		}
 	}
 	walk(nodes);
 	return { total, pending, in_progress: inProgress, done };

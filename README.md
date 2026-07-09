@@ -54,6 +54,8 @@ inline script.
 | `todo(action, params?)` | Manage hierarchical todo lists (if pi-todo is installed). |
 | `schema{ key = type, … }` | Describe what you want back (`str`, `bool`, `num`, `list(…)`, `enum(…)`, `optional(…)`). |
 
+See **[TODO-INTEGRATION.md](TODO-INTEGRATION.md)** for delegation loops, subtree syntax, and real workflow patterns with `todo()`.
+
 Plus standard Lua: loops, `if`/`else`, variables, functions. Runaway loops are
 automatically capped.
 
