@@ -24,7 +24,8 @@ declarative chain isn't enough.
 ```
 
 **Write a workflow** in `.pi/workflows/<name>.lua` (project) or
-`~/.pi/agent/workflows/<name>.lua` (global):
+`~/.pi/agent/workflows/<name>.lua` (global).  See `docs/review-loop.lua` for a
+full example:
 
 ```lua
 set_options{ context = "continue" }

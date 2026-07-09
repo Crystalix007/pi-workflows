@@ -62,7 +62,7 @@ automatically capped.
 ## Example
 
 A review loop that keeps fixing until quality is "high" (from
-`.pi/workflows/review-loop.lua`):
+`docs/review-loop.lua`):
 
 ```lua
 repeat

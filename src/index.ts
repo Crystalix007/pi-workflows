@@ -10,11 +10,27 @@ import { SdkPromptDriver } from "./adapter/sdk-driver.ts";
 import { RpcSubagentDriver } from "./adapter/rpc-driver.ts";
 import { NodeExecDriver } from "./adapter/pi-exec.ts";
 import { resolve, resolveInline } from "./discovery.ts";
+import { todoAvailable } from "./adapter/todo.ts";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		ctx.ui.notify("pi-workflows loaded", "info");
 	});
+
+	// ---- conditional todo enrichment ----
+	if (todoAvailable()) {
+		pi.on("before_agent_start", (event) => {
+			const section =
+				"\n\n## Todo integration (pi-todo detected)\n" +
+				"The `todo()` primitive is available in workflows. Use `todo(\"add\", ...)` " +
+				"to create hierarchical task lists (with `ref`/`underRef` subtree syntax), " +
+				"`todo(\"next\", ...)` to pull the highest-priority pending task, and " +
+				"`todo(\"update\", {id=…, status=\"done\"})` to mark tasks done. " +
+				"The delegation loop: next → worker → done → repeat. " +
+				"See TODO-INTEGRATION.md for real patterns.";
+			return { systemPrompt: event.systemPrompt + section };
+		});
+	}
 
 	// ---- /wf command (human-facing) ----
 	pi.registerCommand("wf", {

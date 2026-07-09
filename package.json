@@ -5,11 +5,13 @@
   "type": "module",
   "description": "Programmatic agentic workflows for Pi via embedded Lua, delegating to pi-subagents.",
   "main": "src/index.ts",
-  "scripts": {
-    "spike:lua": "node spikes/wasmoon-spike.mjs"
-  },
+  "scripts": {},
   "dependencies": {
     "wasmoon": "^1.16.0"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"],
+    "skills": ["./skills/pi-workflows"]
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.3",
