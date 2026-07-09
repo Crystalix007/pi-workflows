@@ -2,6 +2,7 @@
 *.md
 !PLAN.md
 !OBJECTIVE.md
+!README.md
 
 # Build artifacts & dependencies
 node_modules/
