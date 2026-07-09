@@ -9,9 +9,10 @@
 ## System in one sentence
 
 A pi **extension** that runs **Lua** workflow scripts via an embedded VM; the
-script's primitives are host-enforced steps that delegate agentic execution to
-**`pi-subagents`**. The host owns deterministic control flow; `pi-subagents`
-owns the agents.
+script's primitives are host-enforced steps that execute agents through a
+**hybrid adapter** — direct steps (`prompt`/`ask`) via the **SDK**, delegation
+(`subagent`) via **`pi-subagents`**. The host owns deterministic control flow;
+the agents stay model-driven.
 
 ## Layered architecture
 
@@ -33,16 +34,16 @@ owns the agents.
    │  schema helper │  │ transcripts link │  │  canOrchestrate  │
    └──────┬─────────┘  └──────────────────┘  └──────────────────┘
           │ primitive calls (Lua yields)
-   ┌──────▼───────────────────────────────────────────────────┐
-   │          PI-SUBAGENTS ADAPTER  (host → RPC spawn)         │
-   │   context mode · model · cwd · schema · budgets mapping   │
-   └──────┬───────────────────────────────────┬────────────────┘
-          │ primary                           │ fallback
-   ┌──────▼──────────────┐           ┌────────▼──────────────┐
-   │   pi-subagents       │           │  SDK createAgentSession│
-   │  roles · fresh/fork  │           │  (direct steps)        │
-   │  nesting · budgets   │           │                        │
-   └──────────────────────┘           └────────────────────────┘
+   ┌──────▼─────────────────────────────────────────────────────┐
+   │          EXECUTION ADAPTER  (hybrid — Phase 0 decision)     │
+   │   prompt()/ask() ─▶ SDK direct   ·   subagent() ─▶ RPC      │
+   └──────┬─────────────────────────────────────┬────────────────┘
+          │ SDK direct (continue/fork/fresh)     │ pi-subagents RPC
+   ┌──────▼────────────────────┐        ┌────────▼──────────────┐
+   │  createAgentSession       │        │   pi-subagents         │
+   │  structured_output tool   │        │  roles · fresh/fork    │
+   │  (direct agentic step)    │        │  nesting · budgets     │
+   └───────────────────────────┘        └────────────────────────┘
 ```
 
 ## Components & responsibilities
@@ -76,14 +77,16 @@ and bridges to the execution layer:
 `prompt(text, schema?, opts?)` · `subagent({role, task, …}, opts?)` ·
 `workflow(name, args?)` · `ask(text, schema?, opts?)` · `exec(cmd, …)` ·
 (`emit`/`on` arrive in v1.x). `opts` uniformly carries `context`
-(`continue`/`fork`/`fresh`), `model`, `cwd`, `retry`, `budgets`.
+(`continue`/`fork`/`fresh`), `model`, `cwd`, `retry`, `budgets`. **Routing
+(Phase 0):** `prompt`/`ask` → SDK direct; `subagent` → pi-subagents RPC.
 
-**7. pi-subagents adapter** — bridges a primitive call to `pi-subagents` via its
-in-process Extension RPC (`spawn` / `status` / `interrupt`), mapping our step
-options (context mode, model, cwd, schema, budgets, nesting) onto `pi-subagents`
-params and harvesting structured results (`outputSchema` / `structured_output`).
-Falls back to the SDK `createAgentSession` for any step `pi-subagents` can't
-serve. *(Validated by Spike 0 — see SEQUENCED.md.)*
+**7. Execution adapter (hybrid)** — two paths, both pi-native (Phase 0 decision):
+
+- **`prompt`/`ask` → SDK `createAgentSession`** with a `structured_output` tool.
+  Supports `continue`/`fork`/`fresh` (spawns cannot do `continue`).
+- **`subagent` → `pi-subagents` Extension RPC** (`spawn`/`status`/`interrupt`),
+  reusing roles, nesting, intercom, async, budgets (fresh/fork only).
+Nothing `pi-subagents` already provides is reimplemented. *(Validated by Spike 0.)*
 
 **8. Session logging** — emits the workflow run and every step into the **parent
 session log** (the plan or a reference; each step's primitive + args + structured
@@ -103,14 +106,26 @@ those bounds.
 2. Discovery resolves the module; entry and any siblings are identified.
 3. Engine starts a Lua VM, injects primitives + schema helper, runs the entry
    coroutine with the args.
-4. Each primitive call: Lua **yields** → adapter invokes `pi-subagents`
-   (`spawn`) with the step options → awaits the result → resumes Lua with the
-   parsed table.
+4. Each primitive call: Lua **yields** → the execution adapter runs the step
+   (`prompt`/`ask` via SDK, or `subagent` via pi-subagents RPC) → awaits the
+   result → resumes Lua with the parsed table.
 5. Each step is **logged** into the session (inline summary + linked transcript).
 6. On failure: the error returns as a Lua value; per-step retry or halt-with-report applies.
 7. Workflows **compose** via `workflow(name, args)` at the Lua layer — no
    agent-nesting cost (Axis 1). Self-orchestration (Axis 2) only via explicit
    `canOrchestrate`, bounded by depth + budgets.
+
+## Phase 0 validation (Spike 0) — confirmed
+
+- **wasmoon:** runs under jiti; `enableProxy` table round-trip; JS Promises await
+  from Lua via `:await()` (this IS the v1 scheduler); tight loops capped. Workflow
+  code MUST run via `thread.run({ timeout })` (instruction-count hook) —
+  `engine.doString` is unbounded.
+- **pi-subagents RPC:** `subagents:rpc:v1:request` → `…:reply:<id>` works
+  in-session; `spawn` is async-only; status state is in the reply `text`
+  (`State: …`); harvest results from the async-run `status.json`.
+- **structured output:** `outputSchema` is chain-step-only and enforced (fails
+  without a `structured_output` call); compliance is model-dependent.
 
 ## Design invariants (constrain all implementation)
 
@@ -125,6 +140,8 @@ those bounds.
   explicitly.
 - **Separation of execution from agentic.** Plans name *roles/goals*; the harness
   resolves model and prompt, so harness improvements benefit existing workflows.
+- **Bounded Lua execution.** Workflow code runs via `thread.run({ timeout })`
+  (instruction-count hook), never `engine.doString`.
 
 ## Evolution (broad strokes)
 
