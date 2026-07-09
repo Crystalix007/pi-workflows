@@ -1,0 +1,4 @@
+# Ignore all Markdown files, except the tracked planning docs
+*.md
+!PLAN.md
+!OBJECTIVE.md
