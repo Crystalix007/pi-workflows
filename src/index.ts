@@ -22,10 +22,10 @@ export default function (pi: ExtensionAPI) {
 		pi.on("before_agent_start", (event) => {
 			const section =
 				"\n\n## Todo integration (pi-todo detected)\n" +
-				"The `todo()` primitive is available in workflows. Use `todo(\"add\", ...)` " +
+				'The `todo()` primitive is available in workflows. Use `todo("add", ...)` ' +
 				"to create hierarchical task lists (with `ref`/`underRef` subtree syntax), " +
-				"`todo(\"next\", ...)` to pull the highest-priority pending task, and " +
-				"`todo(\"update\", {id=…, status=\"done\"})` to mark tasks done. " +
+				'`todo("next", ...)` to pull the highest-priority pending task, and ' +
+				'`todo("update", {id=…, status="done"})` to mark tasks done. ' +
 				"The delegation loop: next → worker → done → repeat. " +
 				"See TODO-INTEGRATION.md for real patterns.";
 			return { systemPrompt: event.systemPrompt + section };
