@@ -39,7 +39,9 @@ function fieldToJsonSchema(f: LuaSchemaField): Record<string, unknown> {
  * Convert a Lua schema table (built by the preamble) to a JSON Schema object.
  * Every key whose value lacks the `_optional` marker becomes required.
  */
-export function luaSchemaToJsonSchema(table: Record<string, LuaSchemaField>): JsonSchema {
+export function luaSchemaToJsonSchema(
+	table: Record<string, LuaSchemaField>,
+): JsonSchema {
 	const properties: Record<string, JsonSchema> = {};
 	const required: string[] = [];
 	for (const [k, v] of Object.entries(table)) {

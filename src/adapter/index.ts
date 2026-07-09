@@ -5,14 +5,29 @@
  * calls them directly; wasmoon's `:await()` yields the coroutine until the
  * Promise resolves.
  */
-import type { AdapterDrivers, PromptOpts, SubagentOpts, ExecOpts } from "./driver.ts";
+import type {
+	AdapterDrivers,
+	PromptOpts,
+	SubagentOpts,
+	ExecOpts,
+} from "./driver.ts";
 import { luaSchemaToJsonSchema } from "./schema.ts";
 
-export type { AdapterDrivers, PromptDriver, SubagentDriver, ExecDriver } from "./driver.ts";
+export type {
+	AdapterDrivers,
+	PromptDriver,
+	SubagentDriver,
+	ExecDriver,
+} from "./driver.ts";
 export { LUA_SCHEMA_PREAMBLE } from "./schema.ts";
 
-type PromptFn = (text: string, schemaTable?: Record<string, unknown>) => Promise<unknown>
-type SubagentFn = (opts: Record<string, unknown>) => Promise<{ text: string; details?: unknown }>
+type PromptFn = (
+	text: string,
+	schemaTable?: Record<string, unknown>,
+) => Promise<unknown>;
+type SubagentFn = (
+	opts: Record<string, unknown>,
+) => Promise<{ text: string; details?: unknown }>;
 type ExecFn = (cmd: string) => Promise<string>;
 
 /** A mutable options bag set by the workflow via `set_options()`. */
@@ -27,7 +42,8 @@ export function createPrimitives(drivers: AdapterDrivers) {
 
 	// ---- set_options / reset_options ----
 	function set_options(o: Record<string, unknown>) {
-		if (o.context !== undefined) opts.context = o.context as WorkflowOptions["context"];
+		if (o.context !== undefined)
+			opts.context = o.context as WorkflowOptions["context"];
 		if (o.model !== undefined) opts.model = o.model as string;
 		if (o.cwd !== undefined) opts.cwd = o.cwd as string;
 	}
@@ -41,7 +57,9 @@ export function createPrimitives(drivers: AdapterDrivers) {
 	const promptFn: PromptFn = async (text, schemaTable) => {
 		const promptOpts: PromptOpts = { text, ...opts } as PromptOpts;
 		if (schemaTable && typeof schemaTable === "object") {
-			promptOpts.schema = luaSchemaToJsonSchema(schemaTable as Record<string, any>);
+			promptOpts.schema = luaSchemaToJsonSchema(
+				schemaTable as Record<string, any>,
+			);
 		}
 		const res = await drivers.prompt.run(promptOpts);
 		return promptOpts.schema !== undefined ? res.result : res.text;
@@ -49,8 +67,11 @@ export function createPrimitives(drivers: AdapterDrivers) {
 
 	// ---- subagent(opts) => { text, details } ----
 	const subagentFn: SubagentFn = async (luaOpts) => {
-		const rawCtx: string | undefined = (luaOpts.context as string) ?? opts.context;
-		const ctx = (rawCtx === "continue" ? undefined : rawCtx) as SubagentOpts["context"];
+		const rawCtx: string | undefined =
+			(luaOpts.context as string) ?? opts.context;
+		const ctx = (
+			rawCtx === "continue" ? undefined : rawCtx
+		) as SubagentOpts["context"];
 		const o: SubagentOpts = {
 			agent: luaOpts.agent as string,
 			task: luaOpts.task as string,
@@ -59,7 +80,9 @@ export function createPrimitives(drivers: AdapterDrivers) {
 			cwd: (luaOpts.cwd as string) ?? opts.cwd,
 		};
 		if (luaOpts.outputSchema && typeof luaOpts.outputSchema === "object") {
-			o.outputSchema = luaSchemaToJsonSchema(luaOpts.outputSchema as Record<string, any>);
+			o.outputSchema = luaSchemaToJsonSchema(
+				luaOpts.outputSchema as Record<string, any>,
+			);
 		}
 		return drivers.subagent.run(o);
 	};
