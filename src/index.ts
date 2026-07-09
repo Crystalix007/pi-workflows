@@ -4,6 +4,7 @@ import { LuaRuntime } from "./lua/runtime.ts";
 import {
 	createPrimitives,
 	LUA_SCHEMA_PREAMBLE,
+	NoopLogger,
 } from "./adapter/index.ts";
 import { SdkPromptDriver } from "./adapter/sdk-driver.ts";
 import { RpcSubagentDriver } from "./adapter/rpc-driver.ts";
@@ -145,11 +146,14 @@ async function runWorkflow(
 	const subagentDriver = new RpcSubagentDriver(pi.events);
 	const execDriver = new NodeExecDriver();
 
-	const primitives = createPrimitives({
-		prompt: promptDriver,
-		subagent: subagentDriver,
-		exec: execDriver,
-	});
+	const primitives = createPrimitives(
+		{
+			prompt: promptDriver,
+			subagent: subagentDriver,
+			exec: execDriver,
+		},
+		{ logger: new NoopLogger() }, // TODO: wire PiSessionLogger in hardening
+	);
 
 	const runtime = await LuaRuntime.create(primitives, {
 		cpuSliceMs: 1000,

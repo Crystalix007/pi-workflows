@@ -12,6 +12,13 @@ import type {
 	ExecOpts,
 } from "./driver.ts";
 import { luaSchemaToJsonSchema } from "./schema.ts";
+import { NoopLogger, type WorkflowLogger } from "../logging.ts";
+import {
+	withPolicy,
+	type PolicyConfig,
+	type PolicyContext,
+	DEFAULT_POLICY,
+} from "../policy.ts";
 
 export type {
 	AdapterDrivers,
@@ -20,6 +27,8 @@ export type {
 	ExecDriver,
 } from "./driver.ts";
 export { LUA_SCHEMA_PREAMBLE } from "./schema.ts";
+export { NoopLogger } from "../logging.ts";
+export { DEFAULT_POLICY, WorkflowHaltError } from "../policy.ts";
 
 type PromptFn = (
 	text: string,
@@ -37,8 +46,16 @@ interface WorkflowOptions {
 	cwd?: string;
 }
 
-export function createPrimitives(drivers: AdapterDrivers) {
+export interface AdapterOptions {
+	logger?: WorkflowLogger;
+	policy?: PolicyConfig;
+}
+
+export function createPrimitives(drivers: AdapterDrivers, adapterOpts: AdapterOptions = {}) {
 	const opts: WorkflowOptions = {};
+	const logger = adapterOpts.logger ?? new NoopLogger();
+	const policy = adapterOpts.policy ?? DEFAULT_POLICY;
+	const pctx: PolicyContext = { stepIndex: 0, logger, policy };
 
 	// ---- set_options / reset_options ----
 	function set_options(o: Record<string, unknown>) {
@@ -54,7 +71,7 @@ export function createPrimitives(drivers: AdapterDrivers) {
 	}
 
 	// ---- prompt(text, schema?) => any ----
-	const promptFn: PromptFn = async (text, schemaTable) => {
+	const rawPrompt: PromptFn = async (text, schemaTable) => {
 		const promptOpts: PromptOpts = { text, ...opts } as PromptOpts;
 		if (schemaTable && typeof schemaTable === "object") {
 			promptOpts.schema = luaSchemaToJsonSchema(
@@ -64,9 +81,10 @@ export function createPrimitives(drivers: AdapterDrivers) {
 		const res = await drivers.prompt.run(promptOpts);
 		return promptOpts.schema !== undefined ? res.result : res.text;
 	};
+	const promptFn = withPolicy("prompt", rawPrompt, pctx);
 
 	// ---- subagent(opts) => { text, details } ----
-	const subagentFn: SubagentFn = async (luaOpts) => {
+	const rawSubagent: SubagentFn = async (luaOpts) => {
 		const rawCtx: string | undefined =
 			(luaOpts.context as string) ?? opts.context;
 		const ctx = (
@@ -86,14 +104,16 @@ export function createPrimitives(drivers: AdapterDrivers) {
 		}
 		return drivers.subagent.run(o);
 	};
+	const subagentFn = withPolicy("subagent", rawSubagent, pctx);
 
 	// ---- exec(cmd) => stdout ----
-	const execFn: ExecFn = async (cmd) => {
+	const rawExec: ExecFn = async (cmd) => {
 		const execOpts: ExecOpts = { cmd, ...(opts.cwd ? { cwd: opts.cwd } : {}) };
 		const r = await drivers.exec.run(execOpts);
 		if (r.code !== 0) throw new Error(`exec failed (${r.code}): ${r.stderr}`);
 		return r.stdout;
 	};
+	const execFn = withPolicy("exec", rawExec, pctx);
 
 	return {
 		prompt: promptFn,
