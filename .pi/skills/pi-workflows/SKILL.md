@@ -43,6 +43,7 @@ end
 | `prompt(text, schema?)` | Ask the model; returns structured data if schema given |
 | `subagent{role, task, …}` | Delegate to a pi-subagents role (worker, reviewer, etc.) |
 | `exec(cmd)` | Run a shell command, return stdout |
+| `todo("action", params?)` | Manage pi-todo lists: `"create"`, `"add"`, `"next"`, `"update"`, `"show"`, `"purge"`. If pi-todo isn't installed, this function is absent. |
 | `schema{ key = type, … }` | Build a schema for structured output |
 | `set_options{…}` / `reset_options()` | Set per-step defaults (context, model, cwd) |
 

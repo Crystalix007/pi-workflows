@@ -51,7 +51,8 @@ inline script.
 | `prompt(text, schema?)` | Ask the model. Returns structured data if you give it a `schema{…}`. |
 | `subagent{role, task, …}` | Delegate to a worker, reviewer, oracle, etc. |
 | `exec(cmd)` | Run a shell command. |
-| `schema{ key = type, … }` | Describe what you want back (`str`, `bool`, `num`, `list(…)`, `enum(…)`, `optional(…`)). |
+| `todo(action, params?)` | Manage hierarchical todo lists (if pi-todo is installed). |
+| `schema{ key = type, … }` | Describe what you want back (`str`, `bool`, `num`, `list(…)`, `enum(…)`, `optional(…)`). |
 
 Plus standard Lua: loops, `if`/`else`, variables, functions. Runaway loops are
 automatically capped.

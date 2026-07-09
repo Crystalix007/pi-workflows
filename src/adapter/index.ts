@@ -19,6 +19,7 @@ import {
 	type PolicyContext,
 	DEFAULT_POLICY,
 } from "../policy.ts";
+import { callTodo, todoAvailable } from "./todo.ts";
 
 export type {
 	AdapterDrivers,
@@ -124,5 +125,11 @@ export function createPrimitives(
 		exec: execFn,
 		set_options,
 		reset_options,
+		...(todoAvailable()
+			? {
+					todo: (action: string, params?: unknown) =>
+						callTodo(action, (params || {}) as Record<string, unknown>),
+				}
+			: {}),
 	};
 }
