@@ -2,3 +2,9 @@
 *.md
 !PLAN.md
 !OBJECTIVE.md
+
+# Build artifacts & dependencies
+node_modules/
+dist/
+*.log
+.DS_Store
