@@ -10,24 +10,24 @@ const execSh = promisify(execCb);
 
 // exec primitive: run a shell command, return trimmed stdout.
 const exec = (cmd: string) =>
-  execSh(cmd, { encoding: "utf8" }).then((r) => r.stdout.trimEnd());
+	execSh(cmd, { encoding: "utf8" }).then((r) => r.stdout.trimEnd());
 
 const runtime = await LuaRuntime.create(
-  { exec },
-  { cpuSliceMs: 300, totalTimeoutMs: 15000 },
+	{ exec },
+	{ cpuSliceMs: 300, totalTimeoutMs: 15000 },
 );
 
 const fail: string[] = [];
 let passed = 0;
 
 function check(name: string, cond: boolean, detail = "") {
-  if (cond) {
-    passed++;
-    console.log(`✓ ${name}${detail ? " — " + detail : ""}`);
-  } else {
-    fail.push(name);
-    console.log(`✗ ${name}${detail ? " — " + detail : ""}`);
-  }
+	if (cond) {
+		passed++;
+		console.log(`✓ ${name}${detail ? " — " + detail : ""}`);
+	} else {
+		fail.push(name);
+		console.log(`✗ ${name}${detail ? " — " + detail : ""}`);
+	}
 }
 
 // ----- Test 1: loop + exec with guaranteed ordering -----
@@ -62,28 +62,31 @@ check("branch on exec value", out3[0] === "big", String(out3[0]));
 
 // ----- Test 4: Lua error marshalled to WorkflowError -----
 try {
-  await runtime.run(`error("boom from lua")`);
-  fail.push("lua error marshal");
-  console.log("✗ lua error marshal — no throw");
+	await runtime.run(`error("boom from lua")`);
+	fail.push("lua error marshal");
+	console.log("✗ lua error marshal — no throw");
 } catch (e: any) {
-  check("lua error marshalled", /boom/.test(e.message), e.message);
+	check("lua error marshalled", /boom/.test(e.message), e.message);
 }
 
 // ----- Test 5: runaway loop capped by CPU-slice budget -----
 try {
-  await runtime.run(`while true do end`);
-  fail.push("runaway cap");
-  console.log("✗ runaway loop — NOT capped");
+	await runtime.run(`while true do end`);
+	fail.push("runaway cap");
+	console.log("✗ runaway loop — NOT capped");
 } catch (e: any) {
-  check("runaway loop capped", /cpu-slice|timeout/i.test(e.message), e.message);
+	check("runaway loop capped", /cpu-slice|timeout/i.test(e.message), e.message);
 }
 
 // ----- Test 6: multiple return values -----
 const out6 = await runtime.run(`
   return 1, 2, "three"
 `);
-check("multi-return values", out6[0] === 1 && out6[1] === 2 && out6[2] === "three",
-  JSON.stringify(out6));
+check(
+	"multi-return values",
+	out6[0] === 1 && out6[1] === 2 && out6[2] === "three",
+	JSON.stringify(out6),
+);
 
 await runtime.dispose();
 
