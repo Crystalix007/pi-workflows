@@ -59,10 +59,14 @@ for i, t in ipairs(plan.tasks) do
 end
 todo("add", { list = "auth-upgrade", items = items }):await()
 
--- The loop
+-- The loop. next() throws when no pending task remains (and may return
+-- a null next_task instead in the future), so guard both failure modes:
+-- break when the :await() rejects AND when next_task is absent/null.
 while true do
-  local n = todo("next", { list = "auth-upgrade" }):await()
-  if not n.details.next_task then break end
+  local ok, n = pcall(function()
+    return todo("next", { list = "auth-upgrade" }):await()
+  end)
+  if not ok or not n.details.next_task then break end
   local t = n.details.next_task
   subagent{ agent = "worker", task = t.text, context = "fresh" }:await()
   todo("update", { list = "auth-upgrade", id = t.id, status = "done", cascade = true }):await()
