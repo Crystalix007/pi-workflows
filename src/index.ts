@@ -25,7 +25,7 @@ export default function (pi: ExtensionAPI) {
 				'The `todo()` primitive is available in workflows. Use `todo("add", ...)` ' +
 				"to create hierarchical task lists (with `ref`/`underRef` subtree syntax), " +
 				'`todo("next", ...)` to pull the highest-priority pending task, and ' +
-				'`todo("update", {id=…, status="done"})` to mark tasks done. ' +
+				'`todo("update", {list=…, id=…, status="done"})` to mark tasks done. ' +
 				"The delegation loop: next → worker → done → repeat. " +
 				"See TODO-INTEGRATION.md for real patterns.";
 			return { systemPrompt: event.systemPrompt + section };
