@@ -96,9 +96,11 @@ export async function callTodo(
 				return moveTask(db, params);
 			case "delete":
 				return deleteTask(db, params);
+			case "delete_list":
+				return deleteList(db, params);
 			default:
 				throw new Error(
-					`Unknown todo action '${action}'. Supported: lists, create, add, next, update, show, purge, move, delete.`,
+					`Unknown todo action '${action}'. Supported: lists, create, add, next, update, show, purge, move, delete, delete_list.`,
 				);
 		}
 	} finally {
@@ -442,6 +444,29 @@ function deleteTask(db: any, p: Record<string, unknown>): TodoResult {
 			tree: tasks,
 			counts,
 			affected: { deleted: 1 },
+		},
+	};
+}
+
+function deleteList(db: any, p: Record<string, unknown>): TodoResult {
+	const rawList = p.list as string | undefined;
+	if (rawList == null)
+		throw new Error("'list' is required for todo delete_list.");
+	const { scope, name, path } = parseListPath(rawList);
+	const listId = getListId(db, scope, name);
+	// Count tasks before deletion (the list row is about to be removed).
+	const tasks = fetchTree(db, listId);
+	const counts = countsOf(tasks);
+	// Delete all tasks for this list, then the list row itself.
+	// (Schema has ON DELETE CASCADE on list_id; explicit delete is clarity.)
+	db.prepare("DELETE FROM tasks WHERE list_id=?").run(listId);
+	db.prepare("DELETE FROM lists WHERE id=?").run(listId);
+	return {
+		action: "delete_list",
+		details: {
+			action: "delete_list",
+			list: { scope: scope ?? "", name, path, title: null },
+			affected: { deleted: counts.total },
 		},
 	};
 }
