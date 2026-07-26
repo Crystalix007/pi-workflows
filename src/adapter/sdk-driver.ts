@@ -19,6 +19,7 @@ import type {
 	PromptResult,
 	JsonSchema,
 } from "./driver.ts";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 // ---- JsonSchema -> typebox converter ----
 function jsonSchemaToTypebox(s: JsonSchema): any {
@@ -49,6 +50,11 @@ function fieldToTB(f: JsonSchema): any {
 // ---- driver ----
 export class SdkPromptDriver implements PromptDriver {
 	private persistSession: any = null; // AgentSession for `continue` context
+	private modelRegistry?: ModelRegistry;
+
+	constructor(modelRegistry?: ModelRegistry) {
+		this.modelRegistry = modelRegistry;
+	}
 
 	async run(opts: PromptOpts): Promise<PromptResult> {
 		let session: any;
@@ -58,9 +64,23 @@ export class SdkPromptDriver implements PromptDriver {
 			session = this.persistSession;
 		} else {
 			const sm = SessionManager.inMemory();
-			const { session: s } = await createAgentSession({
+			const sessionOpts: Record<string, unknown> = {
 				sessionManager: sm,
-			} as any);
+			};
+			// Resolve per-step model override
+			if (opts.model && this.modelRegistry) {
+				const slashIdx = opts.model.indexOf("/");
+				const provider = slashIdx > 0 ? opts.model.slice(0, slashIdx) : "";
+				const modelId =
+					slashIdx > 0 ? opts.model.slice(slashIdx + 1) : opts.model;
+				const resolved = provider
+					? this.modelRegistry.find(provider, modelId)
+					: undefined;
+				if (resolved) {
+					sessionOpts.model = resolved;
+				}
+			}
+			const { session: s } = await createAgentSession(sessionOpts as any);
 			session = s;
 			if (opts.context === "continue") this.persistSession = session;
 		}

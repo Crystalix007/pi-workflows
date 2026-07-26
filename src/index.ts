@@ -1,4 +1,7 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { LuaRuntime } from "./lua/runtime.ts";
 import {
@@ -12,8 +15,11 @@ import { NodeExecDriver } from "./adapter/pi-exec.ts";
 import { resolve, resolveInline } from "./discovery.ts";
 import { todoAvailable } from "./adapter/todo.ts";
 
+let _modelRegistry: ModelRegistry | undefined;
+
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
+		_modelRegistry = ctx.modelRegistry;
 		ctx.ui.notify("pi-workflows loaded", "info");
 	});
 
@@ -46,7 +52,13 @@ export default function (pi: ExtensionAPI) {
 				specifier = trimmed.slice(3).trim();
 			}
 			try {
-				const result = await runWorkflow(pi, specifier, kind);
+				const result = await runWorkflow(
+					pi,
+					specifier,
+					kind,
+					undefined,
+					ctx.modelRegistry,
+				);
 				ctx.ui.notify(`Workflow done.`, "info");
 				if (result !== undefined) {
 					// Print the result so the user can see it.
@@ -120,6 +132,7 @@ export default function (pi: ExtensionAPI) {
 					source.value,
 					source.kind,
 					params.args,
+					_modelRegistry,
 				);
 				const text =
 					typeof result === "string" ? result : JSON.stringify(result);
@@ -145,6 +158,7 @@ async function runWorkflow(
 	specifier: string,
 	kind: "name" | "path" | "inline" = "inline",
 	args?: unknown,
+	modelRegistry?: ModelRegistry,
 ): Promise<unknown> {
 	let code: string;
 
@@ -163,8 +177,8 @@ async function runWorkflow(
 		}
 	}
 
-	// Build real drivers
-	const promptDriver = new SdkPromptDriver();
+	// Build real drivers — pass modelRegistry to SdkPromptDriver for per-step model resolution
+	const promptDriver = new SdkPromptDriver(modelRegistry);
 	const subagentDriver = new RpcSubagentDriver(pi.events);
 	const execDriver = new NodeExecDriver();
 
