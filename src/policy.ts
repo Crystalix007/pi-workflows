@@ -46,11 +46,12 @@ export function withPolicy(
 	name: string,
 	fn: (...args: any[]) => Promise<any>,
 	ctx: PolicyContext,
+	maxRetries = ctx.policy.maxRetries,
 ): (...args: any[]) => Promise<any> {
 	return async (...args: unknown[]): Promise<unknown> => {
 		const t0 = Date.now();
 		let lastError: unknown;
-		for (let attempt = 0; attempt <= ctx.policy.maxRetries; attempt++) {
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
 			ctx.stepIndex++;
 			try {
 				const result = await fn(...args);
@@ -63,7 +64,7 @@ export function withPolicy(
 				return result;
 			} catch (e) {
 				lastError = e;
-				if (attempt < ctx.policy.maxRetries) {
+				if (attempt < maxRetries) {
 					ctx.logger.step({
 						primitive: name,
 						args,
@@ -87,7 +88,7 @@ export function withPolicy(
 			durationMs: Date.now() - t0,
 		});
 		throw new WorkflowHaltError(
-			`Workflow halted: ${name} failed after ${ctx.policy.maxRetries + 1} attempt(s): ${msg}`,
+			`Workflow halted: ${name} failed after ${maxRetries + 1} attempt(s): ${msg}`,
 			name,
 			ctx.stepIndex,
 			lastError,

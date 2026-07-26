@@ -49,7 +49,8 @@ inline script.
 | Primitive | Does |
 |---|---|
 | `prompt(text, schema?)` | Ask the model. Returns structured data if you give it a `schema{…}`. |
-| `subagent{role, task, …}` | Delegate to a worker, reviewer, oracle, etc. |
+| `subagent{role, task, …}` | Delegate to one worker, reviewer, oracle, etc. |
+| `fanout{tasks={…}, concurrency?}` | Run independent subagents concurrently through pi-subagents. |
 | `exec(cmd)` | Run a shell command. |
 | `todo(action, params?)` | Manage hierarchical todo lists (if pi-todo is installed). |
 | `schema{ key = type, … }` | Describe what you want back (`str`, `bool`, `num`, `list(…)`, `enum(…)`, `optional(…)`). |
@@ -96,6 +97,36 @@ Set per-step or for the whole workflow:
 set_options{ context = "fresh" }       -- set default
 subagent{ context = "fresh", … }      -- override per step
 ```
+
+## Parallel subagent fan-out
+
+Use `fanout` for one bounded, independent group. It is one deterministic
+workflow step: the workflow waits once while `pi-subagents` runs its children
+concurrently. Separate `subagent(...):await()` calls remain sequential.
+
+```lua
+local reviews = fanout{
+  context = "fresh",
+  concurrency = 2,
+  tasks = {
+    { agent = "reviewer", task = "Review correctness. Do not edit files." },
+    { agent = "reviewer", task = "Review tests. Do not edit files." },
+  },
+}:await()
+
+local synthesis = prompt(
+  "Combine these reviews:\n" .. reviews.results[1].text .. "\n---\n" .. reviews.results[2].text
+):await()
+```
+
+Each task can override `model`, `cwd`, and `outputSchema`; group defaults from
+`set_options` apply otherwise. `results` preserves input order, even when tasks
+use the same agent role. A failed or stopped child halts the workflow after its
+outcomes are collected, rather than silently passing partial work downstream.
+
+Fan-outs should be read-only. For concurrent writers, explicitly set
+`worktree = true` and reconcile the resulting worktrees; never let writers
+share the active worktree. `context` must be `fresh` or `fork`.
 
 ## More
 

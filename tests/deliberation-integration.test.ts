@@ -20,6 +20,8 @@ import type {
 	SubagentDriver,
 	SubagentOpts,
 	SubagentResult,
+	FanoutOpts,
+	FanoutResult,
 	ExecDriver,
 	ExecOpts,
 	ExecResult,
@@ -65,6 +67,20 @@ class MockSubagentDriver implements SubagentDriver {
 
 	constructor(simulateFailure = false) {
 		this.simulateFailure = simulateFailure;
+	}
+
+	async fanout(opts: FanoutOpts): Promise<FanoutResult> {
+		return {
+			text: opts.tasks.map((task) => `Output from ${task.agent}`).join("\n"),
+			results: opts.tasks.map((task, index) => ({
+				index,
+				agent: task.agent,
+				task: task.task,
+				text: `Output from ${task.agent}`,
+				status: "complete",
+				ok: true,
+			})),
+		};
 	}
 
 	async run(opts: SubagentOpts): Promise<SubagentResult> {

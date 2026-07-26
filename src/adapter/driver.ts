@@ -43,6 +43,41 @@ export interface SubagentResult {
 	details?: unknown;
 }
 
+/** One independently configured child in a parallel subagent fan-out. */
+export interface FanoutTask {
+	agent: string;
+	task: string;
+	model?: string;
+	cwd?: string;
+	outputSchema?: JsonSchema;
+}
+
+/** A single deterministic workflow step backed by pi-subagents parallel mode. */
+export interface FanoutOpts {
+	tasks: FanoutTask[];
+	context?: "fresh" | "fork";
+	concurrency?: number;
+	cwd?: string;
+	worktree?: boolean;
+}
+
+/** Stable, input-ordered result for a child in a fan-out. */
+export interface FanoutChildResult extends SubagentResult {
+	index: number;
+	agent: string;
+	task: string;
+	status: "complete" | "failed" | "stopped" | "paused" | "unknown";
+	ok: boolean;
+}
+
+export interface FanoutResult {
+	/** Human-readable aggregate retained for convenient logging and prompts. */
+	text: string;
+	/** Results remain in input order, including repeated agent roles. */
+	results: FanoutChildResult[];
+	runId?: string;
+}
+
 export interface ExecOpts {
 	cmd: string;
 	cwd?: string;
@@ -60,6 +95,7 @@ export interface PromptDriver {
 
 export interface SubagentDriver {
 	run(opts: SubagentOpts): Promise<SubagentResult>;
+	fanout(opts: FanoutOpts): Promise<FanoutResult>;
 }
 
 export interface ExecDriver {

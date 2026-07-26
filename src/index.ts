@@ -89,10 +89,10 @@ export default function (pi: ExtensionAPI) {
 		label: "Run Workflow",
 		description:
 			"Run a pi-workflows Lua workflow by name, path, or inline script. " +
-			"Workflows are procedural Lua scripts with primitives: prompt(), subagent(), exec(), set_options(), reset_options(). " +
+			"Workflows are procedural Lua scripts with primitives: prompt(), subagent(), fanout(), exec(), set_options(), reset_options(). " +
 			"Use schema{…} for structured output.",
 		promptSnippet:
-			"Execute a multi-step procedural Lua workflow with prompt/subagent/exec primitives and guaranteed step ordering.",
+			"Execute a multi-step procedural Lua workflow with prompt/subagent/fanout/exec primitives and guaranteed step ordering.",
 		promptGuidelines: [
 			"Use run_workflow for long, procedural plans that need guaranteed step execution. Prefer composing smaller workflows. Inline mode is good for one-off scripts.",
 		],

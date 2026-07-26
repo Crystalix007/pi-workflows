@@ -9,6 +9,8 @@ import type {
 	AdapterDrivers,
 	PromptOpts,
 	SubagentOpts,
+	FanoutOpts,
+	FanoutTask,
 	ExecOpts,
 } from "./driver.ts";
 import { luaSchemaToJsonSchema } from "./schema.ts";
@@ -38,6 +40,7 @@ type PromptFn = (
 type SubagentFn = (
 	opts: Record<string, unknown>,
 ) => Promise<{ text: string; details?: unknown }>;
+type FanoutFn = (opts: Record<string, unknown>) => Promise<unknown>;
 type ExecFn = (cmd: string) => Promise<string>;
 
 /** A mutable options bag set by the workflow via `set_options()`. */
@@ -110,6 +113,71 @@ export function createPrimitives(
 	};
 	const subagentFn = withPolicy("subagent", rawSubagent, pctx);
 
+	// ---- fanout{ tasks = {...}, concurrency? } => ordered child results ----
+	// This is one deterministic Lua step. pi-subagents, not this runtime, owns
+	// the concurrent child execution.
+	const rawFanout: FanoutFn = async (luaOpts) => {
+		if (luaOpts.agent !== undefined || luaOpts.task !== undefined) {
+			throw new Error(
+				"fanout accepts tasks only; use subagent{agent=…, task=…} for one child",
+			);
+		}
+		if (!Array.isArray(luaOpts.tasks) || luaOpts.tasks.length === 0) {
+			throw new Error("fanout requires a non-empty tasks array");
+		}
+		if (
+			luaOpts.concurrency !== undefined &&
+			(!Number.isInteger(luaOpts.concurrency) ||
+				(luaOpts.concurrency as number) < 1)
+		) {
+			throw new Error("fanout concurrency must be a positive integer");
+		}
+
+		const rawCtx = (luaOpts.context as string) ?? opts.context;
+		if (rawCtx === "continue") {
+			throw new Error("fanout context must be fresh or fork");
+		}
+		if (rawCtx !== undefined && rawCtx !== "fresh" && rawCtx !== "fork") {
+			throw new Error("fanout context must be fresh or fork");
+		}
+		const groupModel = (luaOpts.model as string) ?? opts.model;
+		const groupCwd = (luaOpts.cwd as string) ?? opts.cwd;
+		const tasks: FanoutTask[] = luaOpts.tasks.map((rawTask, index) => {
+			if (!rawTask || typeof rawTask !== "object" || Array.isArray(rawTask)) {
+				throw new Error(`fanout task ${index + 1} must be an object`);
+			}
+			const task = rawTask as Record<string, unknown>;
+			if (typeof task.agent !== "string" || !task.agent.trim()) {
+				throw new Error(`fanout task ${index + 1} requires a non-empty agent`);
+			}
+			if (typeof task.task !== "string" || !task.task.trim()) {
+				throw new Error(`fanout task ${index + 1} requires a non-empty task`);
+			}
+			const normalized: FanoutTask = {
+				agent: task.agent,
+				task: task.task,
+				model: (task.model as string) ?? groupModel,
+				cwd: (task.cwd as string) ?? groupCwd,
+			};
+			if (task.outputSchema && typeof task.outputSchema === "object") {
+				normalized.outputSchema = luaSchemaToJsonSchema(
+					task.outputSchema as Record<string, any>,
+				);
+			}
+			return normalized;
+		});
+		const fanoutOpts: FanoutOpts = {
+			tasks,
+			context: rawCtx,
+			concurrency: luaOpts.concurrency as number | undefined,
+			cwd: groupCwd,
+			worktree: luaOpts.worktree as boolean | undefined,
+		};
+		return drivers.subagent.fanout(fanoutOpts);
+	};
+	// Retrying after a successful launch can duplicate concurrent side effects.
+	const fanoutFn = withPolicy("fanout", rawFanout, pctx, 0);
+
 	// ---- exec(cmd) => stdout ----
 	const rawExec: ExecFn = async (cmd) => {
 		const execOpts: ExecOpts = { cmd, ...(opts.cwd ? { cwd: opts.cwd } : {}) };
@@ -122,6 +190,7 @@ export function createPrimitives(
 	return {
 		prompt: promptFn,
 		subagent: subagentFn,
+		fanout: fanoutFn,
 		exec: execFn,
 		set_options,
 		reset_options,

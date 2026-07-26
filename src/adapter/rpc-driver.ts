@@ -8,7 +8,14 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { SubagentDriver, SubagentOpts, SubagentResult } from "./driver.ts";
+import type {
+	FanoutChildResult,
+	FanoutOpts,
+	FanoutResult,
+	SubagentDriver,
+	SubagentOpts,
+	SubagentResult,
+} from "./driver.ts";
 
 export interface EventBus {
 	on(event: string, handler: (data: unknown) => void): (() => void) | void;
@@ -17,6 +24,17 @@ export interface EventBus {
 
 const REQUEST = "subagents:rpc:v1:request";
 const REPLY_PREFIX = "subagents:rpc:v1:reply:";
+
+type TerminalState = "complete" | "failed" | "stopped" | "paused";
+
+function terminalState(value: unknown): TerminalState | undefined {
+	return value === "complete" ||
+		value === "failed" ||
+		value === "stopped" ||
+		value === "paused"
+		? value
+		: undefined;
+}
 
 /** Shape of the result JSON file written by pi-subagents for a completed async run. */
 interface AsyncResultFile {
@@ -30,22 +48,40 @@ interface AsyncResultFile {
 	exitCode?: number;
 	sessionFile?: string;
 	structuredOutput?: unknown;
-	results?: Array<{
-		agent?: string;
-		output?: string;
-		summary?: string;
-		state?: string;
-		success?: boolean;
-		exitCode?: number | null;
-		sessionFile?: string;
-		structuredOutput?: unknown;
-	}>;
+	results?: AsyncChildResult[];
+	steps?: AsyncChildResult[];
+}
+
+interface AsyncChildResult {
+	agent?: string;
+	output?: string;
+	finalOutput?: string;
+	summary?: string;
+	state?: string;
+	status?: string;
+	success?: boolean;
+	exitCode?: number | null;
+	sessionFile?: string;
+	transcriptPath?: string;
+	recentOutput?: string[];
+	structuredOutput?: unknown;
+}
+
+/** Raised after launched fan-out children complete unsuccessfully. */
+export class FanoutError extends Error {
+	constructor(
+		message: string,
+		readonly result: FanoutResult,
+	) {
+		super(message);
+	}
 }
 
 function readAsyncResult(asyncDir: string | undefined): AsyncResultFile | null {
 	if (!asyncDir) return null;
-	// Try result.json first (written on completion), then result.jsonl as fallback
-	for (const name of ["result.json", "result.jsonl"]) {
+	// status.json is the documented, durable lifecycle artifact. Result files
+	// are transient hand-off data and remain a compatibility fallback.
+	for (const name of ["status.json", "result.json", "result.jsonl"]) {
 		try {
 			const p = path.join(asyncDir, name);
 			if (fs.existsSync(p)) {
@@ -58,12 +94,17 @@ function readAsyncResult(asyncDir: string | undefined): AsyncResultFile | null {
 	return null;
 }
 
-/** Try to read an individual step output file (output-0.log, output-1.log, ...). */
+/** Read only the child result portion of output-N.log, not its prompt prelude. */
 function readStepOutput(asyncDir: string, index: number): string | null {
 	try {
 		const p = path.join(asyncDir, `output-${index}.log`);
 		if (fs.existsSync(p)) {
-			return fs.readFileSync(p, "utf-8").trimEnd();
+			const content = fs.readFileSync(p, "utf-8").trimEnd();
+			const marker = "\n---\n**Output:**\n";
+			const markerIndex = content.lastIndexOf(marker);
+			return markerIndex >= 0
+				? content.slice(markerIndex + marker.length).trim()
+				: content;
 		}
 	} catch {
 		/* not available */
@@ -166,17 +207,70 @@ export class RpcSubagentDriver implements SubagentDriver {
 			};
 		}
 
-		// Single run
+		// Single run. The durable status artifact keeps the final child output in
+		// its first step's recentOutput; transient result files expose it at root.
+		const step = result.steps?.[0];
 		const output =
-			result.output ?? readStepOutput(asyncDir!, 0) ?? result.summary ?? "";
+			result.output ??
+			step?.output ??
+			step?.finalOutput ??
+			step?.recentOutput?.join("\n") ??
+			readStepOutput(asyncDir!, 0) ??
+			result.summary ??
+			"";
 		const text = output.trim() || statusText;
-		return {
-			text,
-			details:
-				result.structuredOutput !== undefined
-					? result.structuredOutput
-					: undefined,
-		};
+		const details = result.structuredOutput ?? step?.structuredOutput;
+		return details === undefined ? { text } : { text, details };
+	}
+
+	private readFanoutOutput(
+		asyncDir: string | undefined,
+		statusText: string,
+		terminal: TerminalState,
+		opts: FanoutOpts,
+	): FanoutResult {
+		const result = readAsyncResult(asyncDir);
+		const children = result?.results ?? result?.steps ?? [];
+		const terminalFailed = terminal !== "complete";
+		const results: FanoutChildResult[] = opts.tasks.map((task, index) => {
+			const child = children[index];
+			const text = child
+				? (child.output ??
+					child.finalOutput ??
+					readStepOutput(asyncDir!, index) ??
+					child.recentOutput?.join("\n") ??
+					child.summary ??
+					statusText)
+				: (readStepOutput(asyncDir!, index) ?? statusText);
+			const childState = terminalState(child?.state ?? child?.status);
+			let status: FanoutChildResult["status"] = "unknown";
+			if (childState) {
+				status = childState;
+			} else if (
+				child?.success === false ||
+				(child?.exitCode != null && child.exitCode !== 0) ||
+				terminalFailed
+			) {
+				status = "failed";
+			}
+			const details = child?.structuredOutput;
+			const result: FanoutChildResult = {
+				index,
+				agent: child?.agent ?? task.agent,
+				task: task.task,
+				text: text.trim(),
+				status,
+				ok: status === "complete" || (!terminalFailed && status === "unknown"),
+			};
+			if (details !== undefined) result.details = details;
+			return result;
+		});
+		const text =
+			results
+				.map((child) => (child.text ? `[${child.agent}] ${child.text}` : ""))
+				.filter(Boolean)
+				.join("\n\n") || statusText;
+		return { text, results, runId: result?.runId ?? result?.id };
 	}
 
 	async run(opts: SubagentOpts): Promise<SubagentResult> {
@@ -235,6 +329,59 @@ export class RpcSubagentDriver implements SubagentDriver {
 					text: output.text || text,
 					details: output.details ?? statusData?.details,
 				};
+			}
+		}
+	}
+
+	async fanout(opts: FanoutOpts): Promise<FanoutResult> {
+		const spawnParams: any = {
+			tasks: opts.tasks.map((task) => ({
+				agent: task.agent,
+				task: task.task,
+				...(task.model ? { model: task.model } : {}),
+				...(task.cwd ? { cwd: task.cwd } : {}),
+				...(task.outputSchema ? { outputSchema: task.outputSchema } : {}),
+			})),
+			context: opts.context ?? "fresh",
+			async: true,
+			...(opts.concurrency ? { concurrency: opts.concurrency } : {}),
+			...(opts.cwd ? { cwd: opts.cwd } : {}),
+			...(opts.worktree ? { worktree: true } : {}),
+		};
+		const spawnData = await this.rpc("spawn", spawnParams);
+		const details = spawnData?.details ?? {};
+		const target: any = {};
+		if (details.id) target.id = details.id;
+		if (details.runId) target.runId = details.runId;
+		else if (details.asyncId) target.runId = details.asyncId;
+		if (details.dir) target.dir = details.dir;
+		else if (details.asyncDir) target.dir = details.asyncDir;
+		const asyncDir: string | undefined =
+			details.asyncDir ?? details.dir ?? target.dir;
+
+		const start = Date.now();
+		for (;;) {
+			await this.sleep(this.pollIntervalMs);
+			if (Date.now() - start > this.totalTimeoutMs) {
+				throw new Error(`fanout timed out after ${this.totalTimeoutMs}ms`);
+			}
+			let statusData: any;
+			try {
+				statusData = await this.rpc("status", target);
+			} catch {
+				continue;
+			}
+			const text: string = statusData?.text ?? "";
+			const state =
+				terminalState(readAsyncResult(asyncDir)?.state) ??
+				terminalState(text.match(/\bState:\s*(\w+)\b/)?.[1]);
+			if (state) {
+				await this.sleep(500);
+				const output = this.readFanoutOutput(asyncDir, text, state, opts);
+				if (state !== "complete" || output.results.some((child) => !child.ok)) {
+					throw new FanoutError("one or more fanout children failed", output);
+				}
+				return output;
 			}
 		}
 	}

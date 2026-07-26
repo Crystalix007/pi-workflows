@@ -42,7 +42,8 @@ end
 | Primitive | Purpose |
 |---|---|
 | `prompt(text, schema?)` | Ask the model; returns structured data if schema given |
-| `subagent{role, task, …}` | Delegate to a pi-subagents role (worker, reviewer, etc.) |
+| `subagent{role, task, …}` | Delegate to one pi-subagents role (worker, reviewer, etc.) |
+| `fanout{tasks={…}, concurrency?}` | Run independent pi-subagent tasks concurrently and return ordered results |
 | `exec(cmd)` | Run a shell command, return stdout |
 | `todo("action", params?)` | Manage pi-todo lists: `"create"`, `"add"`, `"next"`, `"update"`, `"show"`, `"purge"`. If pi-todo isn't installed, this function is absent. |
 | `schema{ key = type, … }` | Build a schema for structured output |
@@ -64,6 +65,30 @@ prompts. Runaway loops are capped (^500ms CPU slice).
 - `fork` — branched thread inheriting history (good for review/oracle).
 
 Set via `set_options{context="…"}` or per step: `subagent{context="…"}`.
+
+## Parallel fan-out
+
+Use a single `fanout` step when independent subagent work can run together:
+
+```lua
+local results = fanout{
+  context = "fresh",
+  concurrency = 2,
+  tasks = {
+    { agent = "scout", task = "Map the auth flow. Do not edit files." },
+    { agent = "reviewer", task = "Review auth tests. Do not edit files." },
+  },
+}:await()
+
+local brief = prompt("Synthesize:\n" .. results.results[1].text .. "\n" .. results.results[2].text):await()
+```
+
+Tasks may set `model`, `cwd`, and `outputSchema`; otherwise `set_options`
+defaults apply. `results.results` is always in input order, including repeated
+agent roles. A child failure halts the workflow after outcomes are collected.
+Use `fresh` or `fork`, never `continue`. Prefer read-only tasks; concurrent
+writers require `worktree=true` and explicit reconciliation. Separate
+`subagent():await()` calls are sequential.
 
 ## Composition
 
