@@ -14,7 +14,7 @@
     "skills": ["./skills/pi-workflows"]
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@earendil-works/pi-coding-agent": "^0.99.1",
     "@sinclair/typebox": "^0.34.50",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
